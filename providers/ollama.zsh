@@ -53,9 +53,31 @@ _zsh_ai_cmd_ollama_call() {
     print -u2 "zsh-ai-cmd [ollama]: $error_msg"
     return 1
   fi
+  # check model local or cloud
 
-  # Extract command - structured output ensures valid JSON in .message.content
-  print -r -- "$response" | command jq -re '.message.content | fromjson | .command // empty' 2>/dev/null
+  if [[ $ZSH_AI_CMD_OLLAMA_MODEL == *":cloud"* ]]; then
+     # Extract command from the response content.
+  # Preferred path: structured output gives us a JSON object like {"command": "..."}.
+  # Fallback path: some cloud/remote models ignore the format schema and return
+  # plain text directly in .message.content, so we use that as-is.
+  local content
+  content=$(print -r -- "$response" | command jq -re '.message.content' 2>/dev/null)
+
+  # Try to parse content as JSON and pull out .command field.
+  local cmd
+  cmd=$(print -r -- "$content" | command jq -re 'fromjson | .command // empty' 2>/dev/null)
+
+  if [[ -n $cmd ]]; then
+    # Model obeyed the structured output schema — use the extracted .command value.
+    print -r -- "$cmd"
+  else
+    # Model returned plain text — use the content directly as the command.
+    print -r -- "$content"
+  fi
+  else
+    # Extract command - structured output ensures valid JSON in .message.content
+    print -r -- "$response" | command jq -re '.message.content | fromjson | .command // empty' 2>/dev/null
+  fi
 }
 
 _zsh_ai_cmd_ollama_key_error() {
